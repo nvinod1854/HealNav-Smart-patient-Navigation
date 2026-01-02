@@ -2,37 +2,78 @@ import streamlit as st
 import pandas as pd
 import joblib
 
-# Load trained model and encoders
+# -------------------------------
+# Load model and encoders
+# -------------------------------
 model = joblib.load("priority_model.pkl")
 feature_encoders = joblib.load("feature_encoders.pkl")
 target_encoder = joblib.load("target_encoder.pkl")
 
-st.set_page_config(page_title="Smart Care Triage", layout="centered")
+# -------------------------------
+# Page config
+# -------------------------------
+st.set_page_config(
+    page_title="Smart Care Patient Triage",
+    layout="centered"
+)
 
 st.title("🏥 Smart Care Patient Triage System")
 st.write("AI-assisted patient priority prediction for public hospitals")
 
 st.markdown("---")
 
+# -------------------------------
+# User Inputs
+# -------------------------------
 age = st.slider("Age", 1, 100, 30)
+
 gender = st.selectbox("Gender", ["Male", "Female"])
 
-chest_pain = st.selectbox("Chest Pain", ["Yes", "No"])
-breathlessness = st.selectbox("Breathlessness", ["Yes", "No"])
-fever = st.selectbox("Fever", ["Yes", "No"])
+# IMPORTANT: use numeric values for Yes/No
+chest_pain = st.selectbox(
+    "Chest Pain",
+    [1, 0],
+    format_func=lambda x: "Yes" if x == 1 else "No"
+)
 
-pain_level = st.selectbox("Pain Level", ["mild", "moderate", "severe"])
-severity_level = st.selectbox("Severity Level", ["Low", "Medium", "High", "Critical"])
+breathlessness = st.selectbox(
+    "Breathlessness",
+    [1, 0],
+    format_func=lambda x: "Yes" if x == 1 else "No"
+)
 
-symptom_duration_days = st.slider("Symptom Duration (Days)", 0, 14, 2)
+fever = st.selectbox(
+    "Fever",
+    [1, 0],
+    format_func=lambda x: "Yes" if x == 1 else "No"
+)
+
+pain_level = st.selectbox(
+    "Pain Level",
+    ["mild", "moderate", "severe"]
+)
+
+severity_level = st.selectbox(
+    "Severity Level",
+    ["Low", "Medium", "High", "Critical"]
+)
+
+symptom_duration_days = st.slider(
+    "Symptom Duration (Days)",
+    0, 14, 2
+)
 
 existing_disease = st.selectbox(
     "Existing Disease",
     ["None", "Diabetes", "Heart Disease", "Asthma", "Hypertension"]
 )
 
-if st.button("🔍 Predict Priority"):
+# -------------------------------
+# Prediction
+# -------------------------------
+if st.button("🔍 Predict Patient Priority"):
 
+    # Create DataFrame
     input_data = pd.DataFrame([{
         "age": age,
         "gender": gender,
@@ -45,17 +86,26 @@ if st.button("🔍 Predict Priority"):
         "severity_level": severity_level
     }])
 
+    # Encode categorical columns ONLY
     for col, encoder in feature_encoders.items():
-        input_data[col] = encoder.transform(input_data[col])
+        if col in input_data.columns:
+            input_data[col] = encoder.transform(input_data[col])
 
+    # Ensure column order matches training
+    input_data = input_data[model.feature_names_in_]
+
+    # Predict
     prediction = model.predict(input_data)
     priority = target_encoder.inverse_transform(prediction)[0]
 
     st.markdown("---")
 
+    # -------------------------------
+    # Output
+    # -------------------------------
     if priority == "High":
         st.error("🔴 HIGH PRIORITY")
-        st.write("Immediate medical attention required. Proceed to Emergency.")
+        st.write("Immediate medical attention required. Proceed to Emergency Department.")
 
     elif priority == "Medium":
         st.warning("🟡 MEDIUM PRIORITY")
@@ -63,6 +113,8 @@ if st.button("🔍 Predict Priority"):
 
     else:
         st.success("🟢 LOW PRIORITY")
-        st.write("Non-urgent. OPD visit can be scheduled later.")
+        st.write("Non-urgent case. OPD visit can be scheduled later.")
 
-    st.caption("⚠️ This system assists doctors and does not replace medical judgment.")
+    st.caption(
+        "⚠️ This system assists in patient prioritization and does not replace doctors."
+    )
