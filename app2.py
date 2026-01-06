@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import joblib
-from datetime import datetime
 import numpy as np
+from datetime import datetime
 
 # -------------------------------
 # Load model and encoders
@@ -11,6 +11,7 @@ model = joblib.load("priority_model.pkl")
 feature_encoders = joblib.load("feature_encoders.pkl")
 target_encoder = joblib.load("target_encoder.pkl")
 
+# IMPORTANT: Must match training features exactly
 FEATURE_COLUMNS = [
     "age",
     "gender",
@@ -24,7 +25,7 @@ FEATURE_COLUMNS = [
 ]
 
 # -------------------------------
-# Safe encoding
+# Safe encoding (NO crashes)
 # -------------------------------
 def safe_encode(df, encoders):
     for col, encoder in encoders.items():
@@ -65,9 +66,9 @@ with left:
 
     age = st.slider("Age", 1, 100, 30)
     gender = st.selectbox("Gender", ["Male", "Female"])
-    chest_pain = st.selectbox("Chest Pain", [1, 0], format_func=lambda x: "Yes" if x else "No")
-    breathlessness = st.selectbox("Breathlessness", [1, 0], format_func=lambda x: "Yes" if x else "No")
-    fever = st.selectbox("Fever", [1, 0], format_func=lambda x: "Yes" if x else "No")
+    chest_pain = st.selectbox("Chest Pain", [1, 0], format_func=lambda x: "Yes" if x == 1 else "No")
+    breathlessness = st.selectbox("Breathlessness", [1, 0], format_func=lambda x: "Yes" if x == 1 else "No")
+    fever = st.selectbox("Fever", [1, 0], format_func=lambda x: "Yes" if x == 1 else "No")
     pain_level = st.selectbox("Pain Level", ["mild", "moderate", "severe"])
     severity_level = st.selectbox("Severity Level", ["Low", "Medium", "High", "Critical"])
     symptom_duration_days = st.slider("Symptom Duration (Days)", 0, 14, 2)
@@ -77,6 +78,8 @@ with left:
     )
 
     if st.button("🔍 Predict Priority"):
+
+        # Create input dataframe
         input_data = pd.DataFrame([{
             "age": age,
             "gender": gender,
@@ -89,26 +92,24 @@ with left:
             "severity_level": severity_level
         }])
 
-        # Ensure all features exist
-        for col in FEATURE_COLUMNS:
-            if col not in input_data.columns:
-                input_data[col] = 0
-
+        # Ensure feature order
         input_data = input_data[FEATURE_COLUMNS]
 
         # Encode categorical columns
         input_data = safe_encode(input_data, feature_encoders)
-        # SAFE numeric conversion (never crashes)
+
+        # 🔥 SAFE numeric conversion (NO astype)
         input_data = input_data.apply(pd.to_numeric, errors="coerce")
         input_data = input_data.fillna(0)
 
-       
-        X = np.asarray(input_data.values, dtype=float)
+        # 🔥 Convert to NumPy (Python 3.13 safe)
+        X = np.array(input_data.values, dtype=float)
 
         # Predict
         prediction = model.predict(X)
         priority = target_encoder.inverse_transform(prediction)[0]
 
+        # Show result
         if priority == "High":
             st.error("🔴 HIGH PRIORITY – Go to Emergency immediately")
         elif priority == "Medium":
@@ -133,12 +134,14 @@ with right:
 
     if st.session_state.patient_queue:
         df = pd.DataFrame(st.session_state.patient_queue)
-        priority_map = {"High": 0, "Medium": 1, "Low": 2}
-        df["rank"] = df["Priority"].map(priority_map)
+
+        priority_order = {"High": 0, "Medium": 1, "Low": 2}
+        df["rank"] = df["Priority"].map(priority_order)
         df = df.sort_values("rank").drop(columns="rank")
+
         st.dataframe(df, use_container_width=True)
     else:
         st.info("No patients yet.")
 
 st.markdown("---")
-st.caption("⚠️ HealNav assists doctors. It does not replace clinical judgment.")
+st.caption("⚠️ HealNav assists doctors. It does not replace medical judgment.")
