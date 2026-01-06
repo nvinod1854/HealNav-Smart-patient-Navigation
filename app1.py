@@ -98,12 +98,11 @@ with left:
 
         # Encode categorical columns
         input_data = safe_encode(input_data, feature_encoders)
-
-        # Safe numeric conversion
+        # SAFE numeric conversion (never crashes)
         input_data = input_data.apply(pd.to_numeric, errors="coerce")
         input_data = input_data.fillna(0)
 
-        # 🔥 Convert to NumPy array (Python 3.13 FIX)
+       
         X = np.asarray(input_data.values, dtype=float)
 
         # Predict
