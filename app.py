@@ -10,21 +10,33 @@ model = joblib.load("priority_model.pkl")
 feature_encoders = joblib.load("feature_encoders.pkl")
 target_encoder = joblib.load("target_encoder.pkl")
 
-# -------------------------------
-# Safe encoding function
-# -------------------------------
-def safe_encode(input_df, encoders):
-    for col, encoder in encoders.items():
-        if col in input_df.columns:
-            input_df[col] = input_df[col].astype(str)
-            input_df[col] = input_df[col].apply(
-                lambda x: x if x in encoder.classes_ else encoder.classes_[0]
-            )
-            input_df[col] = encoder.transform(input_df[col])
-    return input_df
+FEATURE_COLUMNS = [
+    "age",
+    "gender",
+    "chest_pain",
+    "breathlessness",
+    "fever",
+    "pain_level",
+    "symptom_duration_days",
+    "existing_disease",
+    "severity_level"
+]
 
 # -------------------------------
-# Session state for Doctor Dashboard
+# Safe encoding
+# -------------------------------
+def safe_encode(df, encoders):
+    for col, encoder in encoders.items():
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+            df[col] = df[col].apply(
+                lambda x: x if x in encoder.classes_ else encoder.classes_[0]
+            )
+            df[col] = encoder.transform(df[col])
+    return df
+
+# -------------------------------
+# Session state
 # -------------------------------
 if "patient_queue" not in st.session_state:
     st.session_state.patient_queue = []
@@ -33,59 +45,37 @@ if "patient_queue" not in st.session_state:
 # Page config
 # -------------------------------
 st.set_page_config(
-    page_title="HealNav – Smart Care Patient Triage",
+    page_title="HealNav – Smart Care Patient Priority Navigation",
     layout="wide"
 )
 
 st.title("🏥 HealNav – Smart Care Patient Priority Navigation")
-st.write("AI-assisted patient triage and priority routing for public hospitals")
+st.write("AI-assisted triage and patient routing for public hospitals")
 
 st.markdown("---")
 
-# -------------------------------
-# Layout: Patient | Doctor
-# -------------------------------
-patient_col, doctor_col = st.columns([1, 1])
+left, right = st.columns([1, 1])
 
 # ==================================================
-# PATIENT SIDE
+# PATIENT INPUT
 # ==================================================
-with patient_col:
+with left:
     st.subheader("👤 Patient Input")
 
     age = st.slider("Age", 1, 100, 30)
     gender = st.selectbox("Gender", ["Male", "Female"])
-
-    chest_pain = st.selectbox(
-        "Chest Pain",
-        [1, 0],
-        format_func=lambda x: "Yes" if x == 1 else "No"
-    )
-
-    breathlessness = st.selectbox(
-        "Breathlessness",
-        [1, 0],
-        format_func=lambda x: "Yes" if x == 1 else "No"
-    )
-
-    fever = st.selectbox(
-        "Fever",
-        [1, 0],
-        format_func=lambda x: "Yes" if x == 1 else "No"
-    )
-
+    chest_pain = st.selectbox("Chest Pain", [1, 0], format_func=lambda x: "Yes" if x else "No")
+    breathlessness = st.selectbox("Breathlessness", [1, 0], format_func=lambda x: "Yes" if x else "No")
+    fever = st.selectbox("Fever", [1, 0], format_func=lambda x: "Yes" if x else "No")
     pain_level = st.selectbox("Pain Level", ["mild", "moderate", "severe"])
     severity_level = st.selectbox("Severity Level", ["Low", "Medium", "High", "Critical"])
-
     symptom_duration_days = st.slider("Symptom Duration (Days)", 0, 14, 2)
-
     existing_disease = st.selectbox(
         "Existing Disease",
         ["None", "Diabetes", "Heart Disease", "Asthma", "Hypertension"]
     )
 
-    if st.button("🔍 Predict Patient Priority"):
-
+    if st.button("🔍 Predict Priority"):
         input_data = pd.DataFrame([{
             "age": age,
             "gender": gender,
@@ -98,35 +88,38 @@ with patient_col:
             "severity_level": severity_level
         }])
 
-        # Encode safely
+        # Ensure all features exist
+        for col in FEATURE_COLUMNS:
+            if col not in input_data.columns:
+                input_data[col] = 0
+
+        input_data = input_data[FEATURE_COLUMNS]
+
+        # Encode
         input_data = safe_encode(input_data, feature_encoders)
 
-        # Match training order
-        input_data = input_data[model.feature_names_in_]
+        # Fill NaN and enforce numeric
+        input_data = input_data.fillna(0).astype(float)
 
-        # Convert to numeric
-        input_data = input_data.astype(float)
+        # 🔍 DEBUG (optional – remove later)
+        # st.write("Input shape:", input_data.shape)
+        # st.write(input_data)
 
         # Predict
         prediction = model.predict(input_data)
         priority = target_encoder.inverse_transform(prediction)[0]
 
-        st.markdown("---")
-
-        # Priority message
         if priority == "High":
-            st.error("🔴 HIGH PRIORITY – Go to Emergency Department immediately.")
+            st.error("🔴 HIGH PRIORITY – Go to Emergency immediately")
         elif priority == "Medium":
-            st.warning("🟡 MEDIUM PRIORITY – Doctor consultation required today.")
+            st.warning("🟡 MEDIUM PRIORITY – Consult doctor today")
         else:
-            st.success("🟢 LOW PRIORITY – OPD visit can be scheduled later.")
+            st.success("🟢 LOW PRIORITY – OPD visit can be delayed")
 
-        # Add patient to doctor queue
         st.session_state.patient_queue.append({
             "Time": datetime.now().strftime("%H:%M:%S"),
             "Age": age,
             "Gender": gender,
-            "Symptoms": f"CP:{chest_pain}, BL:{breathlessness}, Fever:{fever}",
             "Severity": severity_level,
             "Priority": priority
         })
@@ -134,37 +127,17 @@ with patient_col:
 # ==================================================
 # DOCTOR DASHBOARD
 # ==================================================
-with doctor_col:
+with right:
     st.subheader("👨‍⚕️ Doctor Dashboard")
 
     if st.session_state.patient_queue:
         df = pd.DataFrame(st.session_state.patient_queue)
-
-        # Sort by priority
-        priority_order = {"High": 0, "Medium": 1, "Low": 2}
-        df["priority_rank"] = df["Priority"].map(priority_order)
-        df = df.sort_values("priority_rank").drop(columns="priority_rank")
-
+        priority_map = {"High": 0, "Medium": 1, "Low": 2}
+        df["rank"] = df["Priority"].map(priority_map)
+        df = df.sort_values("rank").drop(columns="rank")
         st.dataframe(df, use_container_width=True)
-
-        st.caption("Patients are automatically sorted by priority")
     else:
-        st.info("No patients in queue yet.")
+        st.info("No patients yet.")
 
 st.markdown("---")
-
-# -------------------------------
-# System Explanation
-# -------------------------------
-st.info(
-    """
-    **How HealNav Works**
-    
-    • Patient enters symptoms  
-    • AI predicts priority level  
-    • Patient receives alert  
-    • Doctor dashboard shows prioritized cases  
-    """
-)
-
-st.caption("⚠️ HealNav assists doctors; it does not replace medical judgment.")
+st.caption("⚠️ HealNav assists doctors. It does not replace clinical judgment.")
