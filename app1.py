@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import joblib
 from datetime import datetime
+import numpy as np
 
 # -------------------------------
 # Load model and encoders
@@ -95,18 +96,18 @@ with left:
 
         input_data = input_data[FEATURE_COLUMNS]
 
-        # Encode
+        # Encode categorical columns
         input_data = safe_encode(input_data, feature_encoders)
 
-        # Fill NaN and enforce numeric
-        input_data = input_data.fillna(0).astype(float)
+        # Safe numeric conversion
+        input_data = input_data.apply(pd.to_numeric, errors="coerce")
+        input_data = input_data.fillna(0)
 
-        # 🔍 DEBUG (optional – remove later)
-        # st.write("Input shape:", input_data.shape)
-        # st.write(input_data)
+        # 🔥 Convert to NumPy array (Python 3.13 FIX)
+        X = np.asarray(input_data.values, dtype=float)
 
         # Predict
-        prediction = model.predict(input_data)
+        prediction = model.predict(X)
         priority = target_encoder.inverse_transform(prediction)[0]
 
         if priority == "High":
@@ -116,6 +117,7 @@ with left:
         else:
             st.success("🟢 LOW PRIORITY – OPD visit can be delayed")
 
+        # Add to doctor dashboard
         st.session_state.patient_queue.append({
             "Time": datetime.now().strftime("%H:%M:%S"),
             "Age": age,
